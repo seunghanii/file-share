@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/binary"
+	"image"
+	"image/color"
 	"testing"
 )
 
@@ -64,7 +66,7 @@ func TestEncodeDecodeDIB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	back, err := decodeDIB(encodeDIB(src))
+	back, err := decodeDIB(encodeDIB(flattenRGBA(src)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,5 +76,20 @@ func TestEncodeDecodeDIB(t *testing.T) {
 		if r1 != r2 || g1 != g2 || b1 != b2 {
 			t.Errorf("pixel %v differs after round trip", p)
 		}
+	}
+}
+
+func TestOrientRGBA(t *testing.T) {
+	// 2x1: 왼쪽 빨강, 오른쪽 파랑 → 6(시계 방향 90도)이면 1x2에 위 빨강, 아래 파랑
+	src := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	src.Set(0, 0, color.RGBA{255, 0, 0, 255})
+	src.Set(1, 0, color.RGBA{0, 0, 255, 255})
+	out := orientRGBA(src, 6)
+	if out.Rect.Dx() != 1 || out.Rect.Dy() != 2 || out.RGBAAt(0, 0).R != 255 || out.RGBAAt(0, 1).B != 255 {
+		t.Fatalf("got %v %v %v", out.Rect, out.RGBAAt(0, 0), out.RGBAAt(0, 1))
+	}
+	out = orientRGBA(src, 8)
+	if out.RGBAAt(0, 0).B != 255 || out.RGBAAt(0, 1).R != 255 {
+		t.Fatalf("8: %v %v", out.RGBAAt(0, 0), out.RGBAAt(0, 1))
 	}
 }

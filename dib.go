@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -23,23 +25,83 @@ func isCopyableImage(name string) bool {
 	return false
 }
 
-func loadImage(path string) (image.Image, error) {
-	f, err := os.Open(path)
+// 클립보드에 넣을 이미지 준비 (오래 걸릴 수 있어서 화면 스레드 밖에서 호출)
+// dib: CF_DIB 데이터, pngRaw: 원본이 PNG면 파일 그대로 (다시 압축하지 않음)
+func prepareClipboardImage(path string) (dib, pngRaw []byte, err error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer f.Close()
-	img, _, err := image.Decode(f)
+	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, errors.New("이 이미지 형식은 복사할 수 없어요")
+		return nil, nil, errors.New("이 이미지 형식은 복사할 수 없어요")
 	}
-	return img, nil
+	orient := 1
+	if format == "jpeg" {
+		orient = jpegOrientation(data) // 휴대폰 사진의 회전 정보 반영
+	}
+	rgba := flattenRGBA(img)
+	if orient != 1 {
+		rgba = orientRGBA(rgba, orient)
+	}
+	if format == "png" {
+		pngRaw = data
+	}
+	return encodeDIB(rgba), pngRaw, nil
 }
 
-// image → CF_DIB (32비트, 아래에서 위로)
-func encodeDIB(img image.Image) []byte {
+// 흰 배경 위에 그린 RGBA (draw 패키지의 빠른 변환 사용)
+func flattenRGBA(img image.Image) *image.RGBA {
 	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	if _, opaque := img.(*image.YCbCr); !opaque {
+		draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
+		draw.Draw(out, out.Bounds(), img, b.Min, draw.Over)
+	} else {
+		draw.Draw(out, out.Bounds(), img, b.Min, draw.Src)
+	}
+	return out
+}
+
+// EXIF 회전값(2~8)대로 돌리거나 뒤집은 새 이미지
+func orientRGBA(src *image.RGBA, o int) *image.RGBA {
+	w, h := src.Rect.Dx(), src.Rect.Dy()
+	ow, oh := w, h
+	if o >= 5 {
+		ow, oh = h, w
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, ow, oh))
+	for y := 0; y < h; y++ {
+		si := y * src.Stride
+		for x := 0; x < w; x++ {
+			var dx, dy int
+			switch o {
+			case 2:
+				dx, dy = w-1-x, y
+			case 3:
+				dx, dy = w-1-x, h-1-y
+			case 4:
+				dx, dy = x, h-1-y
+			case 5:
+				dx, dy = y, x
+			case 6:
+				dx, dy = h-1-y, x
+			case 7:
+				dx, dy = h-1-y, w-1-x
+			case 8:
+				dx, dy = y, w-1-x
+			default:
+				dx, dy = x, y
+			}
+			copy(dst.Pix[dy*dst.Stride+dx*4:dy*dst.Stride+dx*4+4], src.Pix[si+x*4:si+x*4+4])
+		}
+	}
+	return dst
+}
+
+// RGBA → CF_DIB (32비트, 아래에서 위로, 불투명)
+func encodeDIB(img *image.RGBA) []byte {
+	w, h := img.Rect.Dx(), img.Rect.Dy()
 	out := make([]byte, 40+w*h*4)
 	le := binary.LittleEndian
 	le.PutUint32(out[0:], 40)
@@ -50,13 +112,10 @@ func encodeDIB(img image.Image) []byte {
 	le.PutUint32(out[20:], uint32(w*h*4))
 	px := out[40:]
 	for y := 0; y < h; y++ {
-		row := px[(h-1-y)*w*4:]
-		for x := 0; x < w; x++ {
-			c := color.NRGBAModel.Convert(img.At(b.Min.X+x, b.Min.Y+y)).(color.NRGBA)
-			// 투명한 부분은 흰 배경으로 (대부분의 프로그램이 DIB 알파를 무시함)
-			a := int(c.A)
-			mix := func(v uint8) byte { return byte((int(v)*a + 255*(255-a)) / 255) }
-			row[x*4], row[x*4+1], row[x*4+2], row[x*4+3] = mix(c.B), mix(c.G), mix(c.R), 255
+		src := img.Pix[y*img.Stride : y*img.Stride+w*4]
+		row := px[(h-1-y)*w*4 : (h-y)*w*4]
+		for i := 0; i < len(src); i += 4 {
+			row[i], row[i+1], row[i+2], row[i+3] = src[i+2], src[i+1], src[i], 255
 		}
 	}
 	return out

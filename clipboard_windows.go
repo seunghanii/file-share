@@ -159,16 +159,8 @@ func putClipboard(format uint32, data []byte) bool {
 	return true
 }
 
-// 이미지 파일을 클립보드에 넣어서 다른 프로그램에 Ctrl+V로 붙여넣을 수 있게 함
-func copyImageToClipboard(hwnd win.HWND, path string) error {
-	img, err := loadImage(path)
-	if err != nil {
-		return err
-	}
-	var pngBuf bytes.Buffer
-	png.Encode(&pngBuf, img)
-	dib := encodeDIB(img)
-
+// 준비된 이미지를 클립보드에 넣음 (prepareClipboardImage 결과, 화면 스레드에서 호출)
+func putImageOnClipboard(hwnd win.HWND, dib, pngRaw []byte) error {
 	var ok bool
 	for i := 0; i < 10; i++ {
 		if ok = win.OpenClipboard(hwnd); ok {
@@ -184,8 +176,10 @@ func copyImageToClipboard(hwnd win.HWND, path string) error {
 	if !putClipboard(win.CF_DIB, dib) {
 		return errors.New("이미지를 복사하지 못했어요")
 	}
-	if f := registeredFormat("PNG"); f != 0 {
-		putClipboard(f, pngBuf.Bytes()) // 투명도를 지원하는 프로그램용
+	if pngRaw != nil {
+		if f := registeredFormat("PNG"); f != 0 {
+			putClipboard(f, pngRaw) // 투명도를 지원하는 프로그램용 (원본 PNG 그대로)
+		}
 	}
 	return nil
 }

@@ -723,11 +723,22 @@ func runGUI() {
 			setStatus("텍스트를 복사했어요. 원하는 곳에 Ctrl+V 하세요.")
 			return
 		}
-		if err := copyImageToClipboard(mw.Handle(), filepath.Join(shareDir, f.Name)); err != nil {
-			setStatus(err.Error())
-			return
-		}
-		setStatus("이미지를 복사했어요. 원하는 곳에 Ctrl+V 하세요.")
+		// 큰 사진은 변환에 시간이 걸리므로 화면이 멈추지 않게 백그라운드에서 준비
+		setStatus("이미지 복사 중…")
+		path := filepath.Join(shareDir, f.Name)
+		go func() {
+			dib, pngRaw, err := prepareClipboardImage(path)
+			mw.Synchronize(func() {
+				if err == nil {
+					err = putImageOnClipboard(mw.Handle(), dib, pngRaw)
+				}
+				if err != nil {
+					setStatus(err.Error())
+					return
+				}
+				setStatus("이미지를 복사했어요. 원하는 곳에 Ctrl+V 하세요.")
+			})
+		}()
 	}
 	list.onCopy = copyItem
 
