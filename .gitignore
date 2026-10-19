@@ -1,0 +1,6 @@
+공유폴더/
+*.exe
+!release/*.exe
+*.part
+*.old
+*.new
