@@ -33,7 +33,7 @@ var iconPNG []byte
 
 const appID = "fileshare-ipad-pc"
 
-var appVersion = "1.10" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
+var appVersion = "1.11" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
 
 var (
 	shareDir string
@@ -232,7 +232,8 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleInfo(w http.ResponseWriter, r *http.Request) {
-	info := map[string]any{"app": appID, "version": appVersion, "local": isLocal(r), "url": lanURL()}
+	info := map[string]any{"app": appID, "version": appVersion, "local": isLocal(r), "url": lanURL(), "httpsUrl": httpsURL()}
+	w.Header().Set("Access-Control-Allow-Origin", "*") // http 페이지가 보안 주소를 쓸 수 있는지 확인할 때 필요
 	if isLocal(r) {
 		info["folder"] = shareDir
 	}
@@ -354,9 +355,11 @@ func main() {
 		go func() { time.Sleep(300 * time.Millisecond); quitApp() }()
 	}))
 	mux.HandleFunc("/files/", handleFile)
+	mux.HandleFunc("/ca.crt", handleCACert)
 
 	fmt.Printf("파일공유 서버 실행 중\n  이 PC: http://localhost:%d\n  다른 기기: %s\n  저장 폴더: %s\n", port, lanURL(), shareDir)
 	go http.Serve(ln, mux)
+	startHTTPS(mux) // 사진 바로 복사용 보안 주소 (https://IP:8443)
 
 	runGUI() // 윈도우: 프로그램 창 + 트레이 아이콘 (gui_windows.go)
 }

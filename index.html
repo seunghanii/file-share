@@ -59,6 +59,25 @@
   .viewer img { max-width:100%; max-height:75vh; border-radius:8px; -webkit-touch-callout:default; }
   .viewer p { color:#fff; font-size:16px; margin:16px 0 10px; text-align:center; }
   .viewer button { background:#fff; color:#111; border:0; border-radius:10px; padding:10px 22px; font-size:15px; }
+  .viewer a { color:#9cc3ff; font-size:14px; margin-bottom:14px; }
+  .tip { display:none; background:var(--card); border-radius:14px; padding:12px 14px; margin:0 0 14px;
+         align-items:center; gap:10px; font-size:14px; }
+  .tip.on { display:flex; }
+  .tip span { flex:1; color:var(--muted); }
+  .tip button { border:0; background:none; color:var(--accent); font-size:14px; font-weight:600; cursor:pointer; padding:6px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.5); display:none; align-items:center; justify-content:center;
+         padding:16px; z-index:20; }
+  .modal.on { display:flex; }
+  .modal .box { background:var(--card); color:var(--text); border-radius:18px; padding:20px; max-width:460px; width:100%;
+         max-height:90vh; overflow:auto; }
+  .modal h3 { margin:0 0 6px; font-size:18px; }
+  .modal .why { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .modal ol { margin:0; padding-left:20px; font-size:15px; line-height:1.55; }
+  .modal li { display:list-item; border:0; padding:6px 0; }
+  .modal .go { display:inline-block; margin-top:6px; background:var(--accent); color:#fff; border-radius:10px;
+         padding:9px 16px; text-decoration:none; font-weight:600; font-size:14px; }
+  .modal .close { margin-top:16px; width:100%; border:1px solid var(--line); background:transparent; color:var(--text);
+         border-radius:10px; padding:10px; font-size:15px; }
   .empty { padding:30px; text-align:center; color:var(--muted); }
   .pc { display:none; background:var(--card); border-radius:16px; padding:16px; margin-bottom:16px; gap:18px; align-items:center; }
   .pc.on { display:flex; }
@@ -86,6 +105,8 @@
 <main>
   <h1>📁 파일공유</h1>
   <div class="sub">같은 Wi-Fi 기기끼리 파일·텍스트 주고받기</div>
+  <div class="tip" id="tip"><span>사진도 [복사] 한 번에 복사하려면 이 기기에서 한 번만 설정하세요.</span>
+    <button id="tipOpen">설정 방법</button><button id="tipClose" aria-label="닫기">✕</button></div>
 
   <div class="pc" id="pc">
     <img id="qr" alt="QR 코드">
@@ -121,7 +142,21 @@
 <div class="viewer" id="viewer">
   <img id="viewerImg" alt="">
   <p>이미지를 <b>길게 누른 뒤 '복사'</b>를 누르세요</p>
+  <a href="#" id="viewerSetup">한 번 설정하면 [복사]만 눌러도 바로 복사돼요</a>
   <button>닫기</button>
+</div>
+<div class="modal" id="setup">
+  <div class="box">
+    <h3>사진 바로 복사 설정 (한 번만)</h3>
+    <p class="why">브라우저는 보안 주소(https)에서만 사진 복사를 허용해요. 이 PC 전용 인증서를 한 번 설치하면 됩니다. 이 인증서는 같은 네트워크 안 주소에만 쓰여요.</p>
+    <ol>
+      <li>아래 버튼을 누르고 <b>허용</b>을 누르세요.<br><a class="go" href="/ca.crt">인증서 받기</a></li>
+      <li><b>설정</b> 앱 맨 위의 <b>프로파일이 다운로드됨</b> → <b>설치</b></li>
+      <li><b>설정 → 일반 → 정보</b> → 맨 아래 <b>인증서 신뢰 설정</b>에서 <b>파일공유</b>를 켜기</li>
+      <li>이 페이지를 다시 열면 보안 주소로 자동으로 넘어가요.<br><a class="go" id="secureLink" href="#">보안 주소로 열기</a></li>
+    </ol>
+    <button class="close" id="setupClose">닫기</button>
+  </div>
 </div>
 
 <script>
@@ -300,7 +335,33 @@ $("#noteSend").onclick = async () => {
 };
 
 load();
-fetch("/api/info").then(r => r.json()).then(i => {
+// 보안 주소(https)를 쓸 수 있는 기기면 그쪽으로 이동 (인증서를 설치·신뢰한 기기만 연결됨)
+function secureTarget(httpsUrl) { return httpsUrl.replace(/\/\/[^:/]+/, "//" + location.hostname) + location.pathname; }
+async function trySecure(i) {
+  if (location.protocol !== "http:" || !i.httpsUrl) return false;
+  const ctl = new AbortController(); setTimeout(() => ctl.abort(), 2500);
+  try {
+    const r = await fetch(new URL("/api/info", secureTarget(i.httpsUrl)), { signal: ctl.signal, cache: "no-store" });
+    if (r.ok) { location.replace(secureTarget(i.httpsUrl)); return true; }
+  } catch (e) {}
+  return false;
+}
+let tipHidden = false;
+try { tipHidden = localStorage.getItem("tipHidden") === "1"; } catch (e) {}
+$("#tipOpen").onclick = () => $("#setup").classList.add("on");
+$("#tipClose").onclick = () => { $("#tip").classList.remove("on"); try { localStorage.setItem("tipHidden", "1"); } catch (e) {} };
+$("#viewerSetup").onclick = e => { e.preventDefault(); $("#viewer").classList.remove("on"); $("#setup").classList.add("on"); };
+$("#setupClose").onclick = () => $("#setup").classList.remove("on");
+$("#setup").onclick = e => { if (e.target.id === "setup") $("#setup").classList.remove("on"); };
+
+fetch("/api/info").then(r => r.json()).then(async i => {
+  if (!window.isSecureContext && i.httpsUrl) {
+    $("#secureLink").href = secureTarget(i.httpsUrl);
+    if (!i.local && await trySecure(i)) return;
+    if (!i.local && !tipHidden) $("#tip").classList.add("on");
+  } else {
+    $("#viewerSetup").style.display = "none";
+  }
   if (!i.local) return;
   $("#pc").classList.add("on");
   $("#lan").textContent = i.url;
