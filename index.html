@@ -274,7 +274,7 @@ async function render() {
     return `<li>${icon}
       <div class="info"><a class="name" href="${url}" target="_blank">${esc(f.name)}</a>
         <div class="meta">${fmtSize(f.size)} · ${fmtDate(f.mtime)}</div></div>
-      <div class="actions">${isImg ? `<button class="copy" data-i="${i}">복사</button>` : ""}<a href="${url}?dl=1" download>받기</a>
+      <div class="actions">${isImg ? `<button class="copy" data-i="${i}">복사</button>` : ""}<a href="${url}?dl=1" download="${esc(f.name)}">받기</a>
         <button class="del" data-i="${i}">삭제</button></div></li>`;
   }).join("");
 }

@@ -61,3 +61,14 @@ func TestPIN(t *testing.T) {
 		t.Fatal("잠금 안 됨", w.Code)
 	}
 }
+
+func TestContentDisposition(t *testing.T) {
+	got := contentDisposition("attachment", "JCP2_LAYOUT DRAWING - NSPBD_REV.0.pdf")
+	want := `attachment; filename="JCP2_LAYOUT DRAWING - NSPBD_REV.0.pdf"; filename*=UTF-8''JCP2_LAYOUT%20DRAWING%20-%20NSPBD_REV.0.pdf`
+	if got != want {
+		t.Fatal(got)
+	}
+	if got := contentDisposition("inline", `도면 "A".pdf`); got != `inline; filename="도면 _A_.pdf"; filename*=UTF-8''%EB%8F%84%EB%A9%B4%20%22A%22.pdf` {
+		t.Fatal(got)
+	}
+}

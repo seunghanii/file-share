@@ -33,7 +33,7 @@ var iconPNG []byte
 
 const appID = "fileshare-ipad-pc"
 
-var appVersion = "1.13" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
+var appVersion = "1.14" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
 
 var (
 	shareDir string
@@ -220,8 +220,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Has("dl") {
 			disp = "attachment"
 		}
-		q := url.PathEscape(fname)
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disp, q, q))
+		w.Header().Set("Content-Disposition", contentDisposition(disp, fname))
 		if t := mime.TypeByExtension(strings.ToLower(filepath.Ext(fname))); t != "" {
 			w.Header().Set("Content-Type", t)
 		}
@@ -229,6 +228,31 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
+}
+
+// 받은 파일이 원래 이름 그대로 저장되도록: filename*에는 UTF-8 이름(RFC 5987),
+// filename에도 원래 이름을 그대로(공백·한글 포함) 넣음. 브라우저 PDF 뷰어처럼 filename만 보는 경우를 위해
+// (예전에는 여기에 %20 같은 인코딩된 이름이 들어가서 그대로 저장되는 문제가 있었음)
+func contentDisposition(disp, name string) string {
+	var plain, ext strings.Builder
+	for _, c := range name {
+		switch {
+		case c == '"' || c == '\\':
+			plain.WriteByte('_')
+		case c < 0x20 || c == 0x7f:
+			plain.WriteByte('_')
+		default:
+			plain.WriteRune(c)
+		}
+	}
+	for _, b := range []byte(name) {
+		if b < 0x80 && (b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || strings.IndexByte("!#$&+-.^_`|~", b) >= 0) {
+			ext.WriteByte(b)
+		} else {
+			fmt.Fprintf(&ext, "%%%02X", b)
+		}
+	}
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disp, plain.String(), ext.String())
 }
 
 func handleInfo(w http.ResponseWriter, r *http.Request) {
