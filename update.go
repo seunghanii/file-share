@@ -56,10 +56,15 @@ func isHTTP(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
-var updateClient = &http.Client{Timeout: 10 * time.Minute}
+var (
+	updateClient   = &http.Client{Timeout: 10 * time.Minute}
+	manifestClient = &http.Client{Timeout: 15 * time.Second} // version.json은 작아서 짧게
+)
 
 // 주소(http 또는 파일 경로)를 열기
-func openSource(src string) (io.ReadCloser, int64, error) {
+func openSource(src string) (io.ReadCloser, int64, error) { return openWith(updateClient, src) }
+
+func openWith(client *http.Client, src string) (io.ReadCloser, int64, error) {
 	if !isHTTP(src) {
 		f, err := os.Open(src)
 		if err != nil {
@@ -70,7 +75,7 @@ func openSource(src string) (io.ReadCloser, int64, error) {
 	}
 	req, _ := http.NewRequest("GET", src, nil)
 	req.Header.Set("Cache-Control", "no-cache")
-	resp, err := updateClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -109,7 +114,7 @@ func checkUpdate() (*updateInfo, error) {
 	if isHTTP(src) {
 		src += fmt.Sprintf("?t=%d", time.Now().Unix()) // 캐시된 옛 정보 방지
 	}
-	rc, _, err := openSource(src)
+	rc, _, err := openWith(manifestClient, src)
 	if err != nil {
 		return nil, fmt.Errorf("업데이트 정보를 가져오지 못했어요 (%v)", err)
 	}

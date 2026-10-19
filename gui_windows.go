@@ -357,8 +357,8 @@ type fileList struct {
 	lastTime time.Time
 	onOpen   func()
 	onChange func()
-	onCopy   func(f fileInfo) // 행의 [복사] 버튼
-	copied   string           // 방금 복사한 행 (잠깐 "복사됨" 표시)
+	onCopy   func(f fileInfo)        // 행의 [복사] 버튼
+	copied   string                  // 방금 복사한 행 (잠깐 "복사됨" 표시)
 	thumbs   map[string]*walk.Bitmap // 이미지 썸네일 (nil = 만들 수 없음)
 	loading  map[string]bool
 }
@@ -694,7 +694,7 @@ func runGUI() {
 	appIcon, _ := walk.NewIconFromImageForDPI(img, 96)
 	curIP := localIP()
 	qrBmp = makeQR(lanURL())
-	var addrLbl *walk.Label
+	var addrLbl, pinLbl *walk.Label
 
 	setStatus := func(s string) { status.SetText(s) }
 
@@ -929,6 +929,17 @@ func runGUI() {
 		}()
 	}
 
+	// [PIN 바꾸기]: 새 번호로 바꾸면 모든 기기가 새 번호를 다시 입력해야 함
+	changePINAsk := func() {
+		if walk.MsgBox(mw, "접속 PIN 바꾸기", "새 PIN으로 바꿀까요?\n지금 접속해 있는 기기도 모두 새 PIN을 다시 입력해야 해요.",
+			walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != win.IDYES {
+			return
+		}
+		code := changePIN()
+		pinLbl.SetText(code)
+		setStatus("접속 PIN을 바꿨어요 · 새 PIN " + code + " · 다른 기기에서는 새 PIN을 입력하세요.")
+	}
+
 	confirmQuit := func() {
 		if walk.MsgBox(mw, "파일공유 종료", "파일공유를 종료할까요?\n종료하면 다른 기기에서도 접속할 수 없어요.",
 			walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) == win.IDYES {
@@ -997,6 +1008,10 @@ func runGUI() {
 										setStatus("주소를 복사했어요.")
 									}),
 									flatButton("저장 폴더 열기", btnSecondary, colCard, func() { openFolder(shareDir) }),
+									HSpacer{Size: 10},
+									Label{Text: "접속 PIN", TextColor: colMuted},
+									Label{AssignTo: &pinLbl, Text: currentPIN(), Font: f(12, true), TextColor: colText},
+									flatButton("PIN 바꾸기", btnSecondary, colCard, changePINAsk),
 									HSpacer{},
 								},
 							},
@@ -1171,6 +1186,31 @@ func runGUI() {
 
 	if justUpdated {
 		setStatus("v" + appVersion + " 업데이트를 마쳤어요.")
+	}
+
+	// 켤 때(그리고 켜 둔 동안 하루 두 번) 새 버전이 있는지 조용히 확인해서 알려줌.
+	// 인터넷이 안 되거나 GitHub에 못 가면 아무것도 표시하지 않음
+	if updateURL != "" {
+		go func() {
+			told := ""
+			time.Sleep(3 * time.Second)
+			for {
+				if info, err := checkUpdate(); err == nil && info != nil && info.Version != told {
+					told = info.Version
+					v := info.Version
+					mw.Synchronize(func() {
+						if updating {
+							return
+						}
+						setStatus("새 버전 v" + v + "이 나왔어요. 위의 [업데이트 확인]을 누르면 바로 적용돼요.")
+						if ni != nil {
+							ni.ShowInfo("새 버전 v"+v+"이 나왔어요", "파일공유 창의 [업데이트 확인]을 누르면 바로 적용돼요.")
+						}
+					})
+				}
+				time.Sleep(12 * time.Hour)
+			}
+		}()
 	}
 
 	refresh(true)

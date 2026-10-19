@@ -33,7 +33,7 @@ var iconPNG []byte
 
 const appID = "fileshare-ipad-pc"
 
-var appVersion = "1.12" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
+var appVersion = "1.13" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
 
 var (
 	shareDir string
@@ -232,7 +232,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleInfo(w http.ResponseWriter, r *http.Request) {
-	info := map[string]any{"app": appID, "version": appVersion, "local": isLocal(r), "url": lanURL(), "httpsUrl": httpsURL()}
+	info := map[string]any{"app": appID, "version": appVersion, "local": isLocal(r), "url": lanURL(), "httpsUrl": httpsURL(), "needPin": !authorized(r)}
 	w.Header().Set("Access-Control-Allow-Origin", "*") // http 페이지가 보안 주소를 쓸 수 있는지 확인할 때 필요
 	if isLocal(r) {
 		info["folder"] = shareDir
@@ -315,6 +315,7 @@ func main() {
 	afterUpdateStartup()
 	shareDir = pickShareDir()
 	loadClips()
+	loadPIN()
 
 	var ln net.Listener
 	for p := 8000; p <= 8010; p++ {
@@ -342,19 +343,21 @@ func main() {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(indexHTML)
 	})
-	mux.HandleFunc("/api/files", handleList)
-	mux.HandleFunc("/api/upload", handleUpload)
-	mux.HandleFunc("/api/clips", handleClips)
-	mux.HandleFunc("/api/clips/", handleClips)
-	mux.HandleFunc("/api/thumb/", handleThumb)
+	// 파일·텍스트를 다루는 기능은 접속 PIN 필요 (이 PC에서는 묻지 않음)
+	mux.HandleFunc("/api/files", requirePIN(handleList))
+	mux.HandleFunc("/api/upload", requirePIN(handleUpload))
+	mux.HandleFunc("/api/clips", requirePIN(handleClips))
+	mux.HandleFunc("/api/clips/", requirePIN(handleClips))
+	mux.HandleFunc("/api/thumb/", requirePIN(handleThumb))
+	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/info", handleInfo)
-	mux.HandleFunc("/api/qr.png", handleQR)
+	mux.HandleFunc("/api/qr.png", requirePIN(handleQR))
 	mux.HandleFunc("/api/open-folder", localOnly(func() { openFolder(shareDir) }))
 	mux.HandleFunc("/api/show", localOnly(showWindow))
 	mux.HandleFunc("/api/quit", localOnly(func() {
 		go func() { time.Sleep(300 * time.Millisecond); quitApp() }()
 	}))
-	mux.HandleFunc("/files/", handleFile)
+	mux.HandleFunc("/files/", requirePIN(handleFile))
 	mux.HandleFunc("/ca.crt", handleCACert)
 
 	fmt.Printf("파일공유 서버 실행 중\n  이 PC: http://localhost:%d\n  다른 기기: %s\n  저장 폴더: %s\n", port, lanURL(), shareDir)

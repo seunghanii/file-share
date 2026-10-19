@@ -66,16 +66,16 @@ func loadOrCreateCA() error {
 	host, _ := os.Hostname()
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
 	tpl := &x509.Certificate{
-		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "파일공유 (" + host + ")", Organization: []string{"파일공유"}},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		MaxPathLenZero:        true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		SerialNumber:                serial,
+		Subject:                     pkix.Name{CommonName: "파일공유 (" + host + ")", Organization: []string{"파일공유"}},
+		NotBefore:                   time.Now().Add(-time.Hour),
+		NotAfter:                    time.Now().AddDate(10, 0, 0),
+		IsCA:                        true,
+		BasicConstraintsValid:       true,
+		MaxPathLenZero:              true,
+		KeyUsage:                    x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		PermittedDNSDomainsCritical: true,
-		PermittedDNSDomains:   []string{"localhost"},
+		PermittedDNSDomains:         []string{"localhost"},
 		PermittedIPRanges: []*net.IPNet{
 			mustCIDR("10.0.0.0/8"), mustCIDR("172.16.0.0/12"), mustCIDR("192.168.0.0/16"),
 			mustCIDR("169.254.0.0/16"), mustCIDR("127.0.0.0/8"), mustCIDR("100.64.0.0/10"),

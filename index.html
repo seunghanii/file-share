@@ -145,6 +145,16 @@
   <a href="#" id="viewerSetup">한 번 설정하면 [복사]만 눌러도 바로 복사돼요</a>
   <button>닫기</button>
 </div>
+<div class="modal" id="pinBox">
+  <div class="box" style="text-align:center">
+    <h3>접속 PIN</h3>
+    <p class="why">PC의 파일공유 창에 보이는 4자리 번호를 입력하세요. 이 기기에서는 한 번만 입력하면 돼요.</p>
+    <input id="pinInput" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code"
+      style="width:180px;font-size:32px;letter-spacing:14px;text-align:center;padding:10px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text)">
+    <p id="pinMsg" style="color:var(--danger);font-size:14px;min-height:20px;margin:10px 0 0"></p>
+    <button class="close" id="pinOk" style="background:var(--accent);color:#fff;border:0;font-weight:600">확인</button>
+  </div>
+</div>
 <div class="modal" id="setup">
   <div class="box">
     <h3>사진 바로 복사 설정 (한 번만)</h3>
@@ -194,7 +204,25 @@ function copyToClipboard(text) {
   return ok;
 }
 
-let items = [], lastSig = "";
+let items = [], lastSig = "", pinShown = false;
+
+// 접속 PIN 입력 (서버가 PIN을 요구할 때)
+function showPin() {
+  if (pinShown) return;
+  pinShown = true;
+  $("#pinBox").classList.add("on");
+  $("#list").innerHTML = '<li class="empty">접속 PIN을 입력하면 목록이 보여요.</li>';
+  setTimeout(() => $("#pinInput").focus(), 50);
+}
+async function sendPin() {
+  const pin = $("#pinInput").value.trim();
+  if (!/^\d{4}$/.test(pin)) { $("#pinMsg").textContent = "숫자 4자리를 입력하세요"; return; }
+  const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+  const v = await r.json().catch(() => ({}));
+  if (r.ok) { pinShown = false; $("#pinBox").classList.remove("on"); $("#pinInput").value = ""; lastSig = ""; load(); return; }
+  $("#pinMsg").textContent = v.error || "PIN이 맞지 않아요";
+  $("#pinInput").value = ""; $("#pinInput").focus();
+}
 
 function badge(ext) {
   return `<div class="ico" style="background:${COLORS[ext] || "#8e8e93"}">${esc(ext.slice(0,4).toUpperCase() || "FILE")}</div>`;
@@ -202,15 +230,18 @@ function badge(ext) {
 
 async function getList(url) {
   const r = await fetch(url, { cache: "no-store" });
+  if (r.status === 401) { const e = new Error("PIN"); e.needPin = true; throw e; }
   if (!r.ok) throw new Error(url + " " + r.status);
   const v = await r.json();
   return Array.isArray(v) ? v : [];
 }
 
 async function load() {
+  if (pinShown) return;
   try { await render(); }
   catch (e) {
     lastSig = "";
+    if (e.needPin) { showPin(); return; }
     $("#list").innerHTML = '<li class="empty">목록을 불러오지 못했어요. PC에서 파일공유가 실행 중인지 확인하세요.</li>';
   }
 }
@@ -282,6 +313,7 @@ function upload(file) {
     xhr.upload.onprogress = e => { if (e.lengthComputable) row.querySelector(".bar>div").style.width = (e.loaded / e.total * 100) + "%"; };
     xhr.onload = () => {
       const ok = xhr.status === 200;
+      if (xhr.status === 401) showPin();
       row.querySelector(".st").textContent = ok ? "✓ 완료" : "✗ 실패";
       if (ok) setTimeout(() => row.remove(), 2500);
       resolve();
@@ -331,8 +363,12 @@ $("#noteSend").onclick = async () => {
   if (!t.trim()) { $("#noteMsg").textContent = "보낼 텍스트를 입력하세요"; return; }
   const r = await fetch("/api/clips", { method: "POST", headers: { "Content-Type": "text/plain; charset=utf-8" }, body: t });
   if (r.ok) { $("#noteText").value = ""; $("#noteMsg").textContent = "보냈어요 ✓ PC에서 [복사]를 누르면 돼요"; load(); }
+  else if (r.status === 401) { showPin(); }
   else { $("#noteMsg").textContent = "보내지 못했어요"; }
 };
+$("#pinOk").onclick = sendPin;
+$("#pinInput").addEventListener("input", e => { $("#pinMsg").textContent = ""; if (e.target.value.length === 4) sendPin(); });
+$("#pinInput").addEventListener("keydown", e => { if (e.key === "Enter") sendPin(); });
 
 load();
 // 보안 주소(https)를 쓸 수 있는 기기면 그쪽으로 이동 (인증서를 설치·신뢰한 기기만 연결됨)
