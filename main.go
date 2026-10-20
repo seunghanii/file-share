@@ -33,7 +33,7 @@ var iconPNG []byte
 
 const appID = "fileshare-ipad-pc"
 
-var appVersion = "1.14" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
+var appVersion = "1.15" // 빌드할 때 -X main.appVersion 으로 바꿀 수 있음
 
 var (
 	shareDir string

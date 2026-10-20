@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"image"
 	"image/png"
 	"os"
 	"strings"
@@ -119,6 +120,18 @@ func readClipboard(hwnd win.HWND) (pasteResult, error) {
 		}
 		pngData = b.Bytes()
 	}
+	// 엑셀 [그림으로 복사]의 기본 형식(그림)은 메타파일만 올려서 직접 그려서 PNG로 만듦
+	if pngData == nil && cfAvailable(win.CF_ENHMETAFILE) {
+		img, err := renderEMF(win.HENHMETAFILE(win.GetClipboardData(win.CF_ENHMETAFILE)))
+		if err != nil {
+			return res, err
+		}
+		var b bytes.Buffer
+		if err := png.Encode(&b, img); err != nil {
+			return res, err
+		}
+		pngData = b.Bytes()
+	}
 	if pngData == nil {
 		return res, errors.New("붙여넣을 내용이 없어요. 캡처(Win+Shift+S)하거나 텍스트·파일을 복사한 뒤 Ctrl+V 하세요")
 	}
@@ -129,6 +142,58 @@ func readClipboard(hwnd win.HWND) (pasteResult, error) {
 	}
 	res.saved = append(res.saved, path)
 	return res, nil
+}
+
+// 메타파일(벡터 그림)을 흰 배경 비트맵으로 그림. 선명하게 화면 크기의 2배로 그림
+func renderEMF(h win.HENHMETAFILE) (*image.RGBA, error) {
+	bad := errors.New("복사한 그림을 읽지 못했어요")
+	if h == 0 {
+		return nil, bad
+	}
+	var hdr win.ENHMETAHEADER
+	if win.GetEnhMetaFileHeader(h, uint32(unsafe.Sizeof(hdr)), &hdr) == 0 {
+		return nil, bad
+	}
+	// rclFrame은 0.01mm 단위 → 96 DPI 픽셀 × 2
+	w := int(hdr.RclFrame.Right-hdr.RclFrame.Left) * 96 * 2 / 2540
+	ht := int(hdr.RclFrame.Bottom-hdr.RclFrame.Top) * 96 * 2 / 2540
+	if w <= 0 || ht <= 0 {
+		w, ht = int(hdr.RclBounds.Right-hdr.RclBounds.Left+1), int(hdr.RclBounds.Bottom-hdr.RclBounds.Top+1)
+	}
+	if w <= 0 || ht <= 0 {
+		return nil, bad
+	}
+	if m := max(w, ht); m > 8000 { // 너무 크면 줄임
+		w, ht = w*8000/m, ht*8000/m
+	}
+	dc := win.CreateCompatibleDC(0)
+	if dc == 0 {
+		return nil, bad
+	}
+	defer win.DeleteDC(dc)
+	bi := win.BITMAPINFOHEADER{BiWidth: int32(w), BiHeight: -int32(ht), BiPlanes: 1, BiBitCount: 32, BiCompression: win.BI_RGB}
+	bi.BiSize = uint32(unsafe.Sizeof(bi))
+	var bits unsafe.Pointer
+	bmp := win.CreateDIBSection(dc, &bi, win.DIB_RGB_COLORS, &bits, 0, 0)
+	if bmp == 0 || bits == nil {
+		return nil, bad
+	}
+	defer win.DeleteObject(win.HGDIOBJ(bmp))
+	old := win.SelectObject(dc, win.HGDIOBJ(bmp))
+	defer win.SelectObject(dc, old)
+	px := unsafe.Slice((*byte)(bits), w*ht*4)
+	for i := range px {
+		px[i] = 0xFF
+	}
+	if !win.PlayEnhMetaFile(dc, h, &win.RECT{Right: int32(w), Bottom: int32(ht)}) {
+		return nil, bad
+	}
+	win.GdiFlush()
+	img := image.NewRGBA(image.Rect(0, 0, w, ht))
+	for i := 0; i < len(px); i += 4 { // BGRA → RGBA
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = px[i+2], px[i+1], px[i], 255
+	}
+	return img, nil
 }
 
 // ---------- 이미지를 클립보드로 복사 ----------
