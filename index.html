@@ -104,7 +104,7 @@
 <body>
 <main>
   <h1>📁 파일공유</h1>
-  <div class="sub">같은 Wi-Fi 기기끼리 파일·텍스트 주고받기</div>
+  <div class="sub">같은 Wi-Fi 기기끼리 파일·텍스트 주고받기<a id="toHttp" href="#" style="display:none;margin-left:10px;color:var(--accent);text-decoration:none">일반 주소(http)로 열기</a></div>
   <div class="tip" id="tip"><span>사진도 [복사] 한 번에 복사하려면 이 기기에서 한 번만 설정하세요.</span>
     <button id="tipOpen">설정 방법</button><button id="tipClose" aria-label="닫기">✕</button></div>
 
@@ -163,7 +163,7 @@
       <li>아래 버튼을 누르고 <b>허용</b>을 누르세요.<br><a class="go" href="/ca.crt">인증서 받기</a></li>
       <li><b>설정</b> 앱 맨 위의 <b>프로파일이 다운로드됨</b> → <b>설치</b></li>
       <li><b>설정 → 일반 → 정보</b> → 맨 아래 <b>인증서 신뢰 설정</b>에서 <b>파일공유</b>를 켜기</li>
-      <li>이 페이지를 다시 열면 보안 주소로 자동으로 넘어가요.<br><a class="go" id="secureLink" href="#">보안 주소로 열기</a></li>
+      <li>아래 버튼으로 보안 주소를 여세요. 일반 주소(http)도 그대로 쓸 수 있어요.<br><a class="go" id="secureLink" href="#">보안 주소로 열기</a></li>
     </ol>
     <button class="close" id="setupClose">닫기</button>
   </div>
@@ -371,17 +371,8 @@ $("#pinInput").addEventListener("input", e => { $("#pinMsg").textContent = ""; i
 $("#pinInput").addEventListener("keydown", e => { if (e.key === "Enter") sendPin(); });
 
 load();
-// 보안 주소(https)를 쓸 수 있는 기기면 그쪽으로 이동 (인증서를 설치·신뢰한 기기만 연결됨)
+// 보안 주소(https)는 [보안 주소로 열기]를 눌렀을 때만 씀. 일반 주소(http)에서 자동으로 넘기지 않음
 function secureTarget(httpsUrl) { return httpsUrl.replace(/\/\/[^:/]+/, "//" + location.hostname) + location.pathname; }
-async function trySecure(i) {
-  if (location.protocol !== "http:" || !i.httpsUrl) return false;
-  const ctl = new AbortController(); setTimeout(() => ctl.abort(), 2500);
-  try {
-    const r = await fetch(new URL("/api/info", secureTarget(i.httpsUrl)), { signal: ctl.signal, cache: "no-store" });
-    if (r.ok) { location.replace(secureTarget(i.httpsUrl)); return true; }
-  } catch (e) {}
-  return false;
-}
 let tipHidden = false;
 try { tipHidden = localStorage.getItem("tipHidden") === "1"; } catch (e) {}
 $("#tipOpen").onclick = () => $("#setup").classList.add("on");
@@ -393,10 +384,13 @@ $("#setup").onclick = e => { if (e.target.id === "setup") $("#setup").classList.
 fetch("/api/info").then(r => r.json()).then(async i => {
   if (!window.isSecureContext && i.httpsUrl) {
     $("#secureLink").href = secureTarget(i.httpsUrl);
-    if (!i.local && await trySecure(i)) return;
     if (!i.local && !tipHidden) $("#tip").classList.add("on");
   } else {
     $("#viewerSetup").style.display = "none";
+    if (location.protocol === "https:" && i.url) { // 보안 주소에서 일반 주소로 돌아가는 링크
+      $("#toHttp").href = i.url.replace(/\/\/[^:/]+/, "//" + location.hostname) + location.pathname;
+      $("#toHttp").style.display = "inline";
+    }
   }
   if (!i.local) return;
   $("#pc").classList.add("on");
